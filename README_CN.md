@@ -5,6 +5,7 @@
 - picodet旧版支持，此版本在cpu上速度可观。
 - yolov8优化分辨率支持，yolov8-seg支持
 - openvino backend比较老旧了，打算更新到2024版，支持在intel-gpu上进行图像预处理
+
 [English](README_EN.md) | 简体中文 | [हिन्दी](./docs/docs_i18n/README_हिन्दी.md) | [日本語](./docs/docs_i18n/README_日本語.md) | [한국인](./docs/docs_i18n/README_한국인.md) | [Pу́сский язы́к](./docs/docs_i18n/README_Pу́сский_язы́к.md)
 
 ![⚡️FastDeploy](https://user-images.githubusercontent.com/31974251/185771818-5d4423cd-c94c-4a49-9894-bc7a8d1c29d0.png)
