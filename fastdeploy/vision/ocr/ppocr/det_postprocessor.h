@@ -67,6 +67,15 @@ class FASTDEPLOY_DECL DBDetectorPostprocessor {
   /// Get use_dilation of the detection postprocess
   int GetUseDilation() const { return use_dilation_; }
 
+  /// Set box_type for the detection postprocess, supported values:
+  /// "quad" (default) and "poly". PP-OCRv5/v6 cpp_infer also defaults to
+  /// "quad". Note: the FastDeploy OCRResult.boxes is fixed-size 4-point,
+  /// so "poly" is reserved for future extensions and currently behaves
+  /// the same as "quad".
+  void SetBoxType(const std::string& box_type) { box_type_ = box_type; }
+  /// Get box_type of the detection postprocess
+  std::string GetBoxType() const { return box_type_; }
+
 
  private:
   double det_db_thresh_ = 0.3;
@@ -74,6 +83,7 @@ class FASTDEPLOY_DECL DBDetectorPostprocessor {
   double det_db_unclip_ratio_ = 1.5;
   std::string det_db_score_mode_ = "slow";
   bool use_dilation_ = false;
+  std::string box_type_ = "quad";
   PostProcessor util_post_processor_;
   bool SingleBatchPostprocessor(const float* out_data, int n2, int n3,
                                 const std::array<int, 4>& det_img_info,

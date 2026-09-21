@@ -14,8 +14,76 @@
 #include <pybind11/stl.h>
 
 #include "fastdeploy/pybind/main.h"
+#include "fastdeploy/vision/ocr/ppocr/ppocr_v5.h"
+#include "fastdeploy/vision/ocr/ppocr/ppocr_v6.h"
 
 namespace fastdeploy {
+void BindPPOCRv6(pybind11::module& m) {
+  // PPOCRv6
+  pybind11::class_<pipeline::PPOCRv6, pipeline::PPOCRv5>(m, "PPOCRv6")
+
+      .def(pybind11::init<fastdeploy::vision::ocr::DBDetector*,
+                          fastdeploy::vision::ocr::Classifier*,
+                          fastdeploy::vision::ocr::Recognizer*>())
+      .def(pybind11::init<fastdeploy::vision::ocr::DBDetector*,
+                          fastdeploy::vision::ocr::Recognizer*>())
+      .def_property("cls_batch_size", &pipeline::PPOCRv6::GetClsBatchSize,
+                    &pipeline::PPOCRv6::SetClsBatchSize)
+      .def_property("rec_batch_size", &pipeline::PPOCRv6::GetRecBatchSize,
+                    &pipeline::PPOCRv6::SetRecBatchSize)
+      .def("clone", [](pipeline::PPOCRv6& self) { return self.Clone(); })
+      .def("predict",
+           [](pipeline::PPOCRv6& self, pybind11::array& data) {
+             auto mat = PyArrayToCvMat(data);
+             vision::OCRResult res;
+             self.Predict(&mat, &res);
+             return res;
+           })
+      .def("batch_predict",
+           [](pipeline::PPOCRv6& self, std::vector<pybind11::array>& data) {
+             std::vector<cv::Mat> images;
+             for (size_t i = 0; i < data.size(); ++i) {
+               images.push_back(PyArrayToCvMat(data[i]));
+             }
+             std::vector<vision::OCRResult> results;
+             self.BatchPredict(images, &results);
+             return results;
+           });
+}
+
+void BindPPOCRv5(pybind11::module& m) {
+  // PPOCRv5
+  pybind11::class_<pipeline::PPOCRv5, pipeline::PPOCRv4>(m, "PPOCRv5")
+
+      .def(pybind11::init<fastdeploy::vision::ocr::DBDetector*,
+                          fastdeploy::vision::ocr::Classifier*,
+                          fastdeploy::vision::ocr::Recognizer*>())
+      .def(pybind11::init<fastdeploy::vision::ocr::DBDetector*,
+                          fastdeploy::vision::ocr::Recognizer*>())
+      .def_property("cls_batch_size", &pipeline::PPOCRv5::GetClsBatchSize,
+                    &pipeline::PPOCRv5::SetClsBatchSize)
+      .def_property("rec_batch_size", &pipeline::PPOCRv5::GetRecBatchSize,
+                    &pipeline::PPOCRv5::SetRecBatchSize)
+      .def("clone", [](pipeline::PPOCRv5& self) { return self.Clone(); })
+      .def("predict",
+           [](pipeline::PPOCRv5& self, pybind11::array& data) {
+             auto mat = PyArrayToCvMat(data);
+             vision::OCRResult res;
+             self.Predict(&mat, &res);
+             return res;
+           })
+      .def("batch_predict",
+           [](pipeline::PPOCRv5& self, std::vector<pybind11::array>& data) {
+             std::vector<cv::Mat> images;
+             for (size_t i = 0; i < data.size(); ++i) {
+               images.push_back(PyArrayToCvMat(data[i]));
+             }
+             std::vector<vision::OCRResult> results;
+             self.BatchPredict(images, &results);
+             return results;
+           });
+}
+
 void BindPPOCRv4(pybind11::module& m) {
   // PPOCRv4
   pybind11::class_<pipeline::PPOCRv4, FastDeployModel>(m, "PPOCRv4")

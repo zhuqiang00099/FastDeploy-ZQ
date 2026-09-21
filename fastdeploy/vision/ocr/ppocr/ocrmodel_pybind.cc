@@ -32,6 +32,22 @@ void BindPPOCRModel(pybind11::module& m) {
       .def_property("max_side_len",
                     &vision::ocr::DBDetectorPreprocessor::GetMaxSideLen,
                     &vision::ocr::DBDetectorPreprocessor::SetMaxSideLen)
+      .def_property("limit_side_len",
+                    &vision::ocr::DBDetectorPreprocessor::GetLimitSideLen,
+                    &vision::ocr::DBDetectorPreprocessor::SetLimitSideLen)
+      .def_property(
+          "limit_type",
+          [](vision::ocr::DBDetectorPreprocessor& self) {
+            return self.GetLimitType();
+          },
+          [](vision::ocr::DBDetectorPreprocessor& self,
+             const std::string& value) { self.SetLimitType(value); })
+      .def_property("max_side_limit",
+                    &vision::ocr::DBDetectorPreprocessor::GetMaxSideLimit,
+                    &vision::ocr::DBDetectorPreprocessor::SetMaxSideLimit)
+      .def_property("use_v5_resize",
+                    &vision::ocr::DBDetectorPreprocessor::GetUseV5Resize,
+                    &vision::ocr::DBDetectorPreprocessor::UseV5Resize)
       .def("set_normalize",
            [](vision::ocr::DBDetectorPreprocessor& self,
               const std::vector<float>& mean, const std::vector<float>& std,
@@ -77,6 +93,13 @@ void BindPPOCRModel(pybind11::module& m) {
       .def_property("use_dilation",
                     &vision::ocr::DBDetectorPostprocessor::GetUseDilation,
                     &vision::ocr::DBDetectorPostprocessor::SetUseDilation)
+      .def_property(
+          "box_type",
+          [](vision::ocr::DBDetectorPostprocessor& self) {
+            return self.GetBoxType();
+          },
+          [](vision::ocr::DBDetectorPostprocessor& self,
+             const std::string& value) { self.SetBoxType(value); })
 
       .def("run",
            [](vision::ocr::DBDetectorPostprocessor& self,

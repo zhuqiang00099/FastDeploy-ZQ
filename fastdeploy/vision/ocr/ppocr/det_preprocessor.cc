@@ -49,6 +49,55 @@ std::array<int, 4> DBDetectorPreprocessor::OcrDetectorGetInfo(
    */
 }
 
+std::array<int, 4> DBDetectorPreprocessor::OcrDetectorGetInfoV5(FDMat* img) {
+  // Mirrors PaddleOCR cpp_infer DetResizeForTest::ResizeImageType0.
+  // Supports limit_type in {"max", "min", "resize_long"} and clamps the
+  // longest side to max_side_limit_. Returns {ori_w, ori_h, resize_w,
+  // resize_h} with both resize dims rounded up to multiples of 32.
+  int w = img->Width();
+  int h = img->Height();
+  if (static_shape_infer_) {
+    return {w, h, det_image_shape_[2], det_image_shape_[1]};
+  }
+
+  // PaddleOCR pads tiny images (<64 px on either side) before resizing.
+  if (h + w < 64) {
+    int pad_h = std::max(32, h);
+    int pad_w = std::max(32, w);
+    w = pad_w;
+    h = pad_h;
+  }
+
+  float ratio = 1.f;
+  if (limit_type_ == "max") {
+    if (std::max(h, w) > limit_side_len_) {
+      ratio = float(limit_side_len_) / std::max(h, w);
+    }
+  } else if (limit_type_ == "min") {
+    if (std::min(h, w) < limit_side_len_) {
+      ratio = float(limit_side_len_) / std::min(h, w);
+    }
+  } else if (limit_type_ == "resize_long") {
+    ratio = float(limit_side_len_) / std::max(h, w);
+  } else {
+    FDERROR << "Not supported limit_type: " << limit_type_ << std::endl;
+    return {w, h, w, h};
+  }
+
+  int resize_h = int(h * ratio);
+  int resize_w = int(w * ratio);
+
+  if (std::max(resize_h, resize_w) > max_side_limit_) {
+    ratio = float(max_side_limit_) / std::max(resize_h, resize_w);
+    resize_h = int(resize_h * ratio);
+    resize_w = int(resize_w * ratio);
+  }
+  resize_h = std::max(int(std::round(resize_h / 32.0) * 32), 32);
+  resize_w = std::max(int(std::round(resize_w / 32.0) * 32), 32);
+
+  return {w, h, resize_w, resize_h};
+}
+
 DBDetectorPreprocessor::DBDetectorPreprocessor() {
   resize_op_ = std::make_shared<Resize>(-1, -1);
 
@@ -79,7 +128,11 @@ bool DBDetectorPreprocessor::Apply(FDMatBatch* image_batch,
   batch_det_img_info_.resize(image_batch->mats->size());
   for (size_t i = 0; i < image_batch->mats->size(); ++i) {
     FDMat* mat = &(image_batch->mats->at(i));
-    batch_det_img_info_[i] = OcrDetectorGetInfo(mat, max_side_len_);
+    if (use_v5_resize_) {
+      batch_det_img_info_[i] = OcrDetectorGetInfoV5(mat);
+    } else {
+      batch_det_img_info_[i] = OcrDetectorGetInfo(mat, max_side_len_);
+    }
     max_resize_w = std::max(max_resize_w, batch_det_img_info_[i][2]);
     max_resize_h = std::max(max_resize_h, batch_det_img_info_[i][3]);
   }

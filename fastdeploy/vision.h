@@ -64,6 +64,8 @@
 #include "fastdeploy/vision/ocr/ppocr/ppocr_v2.h"
 #include "fastdeploy/vision/ocr/ppocr/ppocr_v3.h"
 #include "fastdeploy/vision/ocr/ppocr/ppocr_v4.h"
+#include "fastdeploy/vision/ocr/ppocr/ppocr_v5.h"
+#include "fastdeploy/vision/ocr/ppocr/ppocr_v6.h"
 #include "fastdeploy/vision/ocr/ppocr/ppstructurev2_table.h"
 #include "fastdeploy/vision/ocr/ppocr/ppstructurev2_layout.h"
 #include "fastdeploy/vision/ocr/ppocr/recognizer.h"
