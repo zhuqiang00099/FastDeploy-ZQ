@@ -87,15 +87,17 @@ bool TrtBackend::LoadTrtCache(const std::string& trt_engine_file) {
       engine_->createExecutionContext());
   GetInputOutputInfo();
 
-  for (int32_t i = 0; i < engine_->getNbBindings(); ++i) {
-    if (!engine_->bindingIsInput(i)) {
+  for (int32_t i = 0; i < engine_->getNbIOTensors(); ++i) {
+    auto name = std::string(engine_->getIOTensorName(i));
+    if (engine_->getTensorIOMode(name.c_str()) !=
+        nvinfer1::TensorIOMode::kINPUT) {
       continue;
     }
-    auto min = ToVec(engine_->getProfileDimensions(
-        i, 0, nvinfer1::OptProfileSelector::kMAX));
-    auto max = ToVec(engine_->getProfileDimensions(
-        i, 0, nvinfer1::OptProfileSelector::kMIN));
-    auto name = std::string(engine_->getBindingName(i));
+    int profile_index = 0;
+    auto min = ToVec(engine_->getProfileShape(
+        name.c_str(), profile_index, nvinfer1::OptProfileSelector::kMIN));
+    auto max = ToVec(engine_->getProfileShape(
+        name.c_str(), profile_index, nvinfer1::OptProfileSelector::kMAX));
     auto iter = shape_range_info_.find(name);
     if (iter == shape_range_info_.end()) {
       FDERROR << "There's no input named '" << name << "' in loaded model."
@@ -344,7 +346,7 @@ bool TrtBackend::Infer(std::vector<FDTensor>& inputs,
   AllocateOutputsBuffer(outputs, copy_to_fd);
 
   RUNTIME_PROFILE_LOOP_BEGIN(1)
-  if (!context_->enqueueV2(bindings_.data(), stream_, nullptr)) {
+  if (!context_->enqueueV3(stream_)) {
     FDERROR << "Failed to Infer with TensorRT." << std::endl;
     return false;
   }
@@ -413,12 +415,13 @@ void TrtBackend::GetInputOutputInfo() {
   std::vector<TrtValueInfo>().swap(outputs_desc_);
   inputs_desc_.clear();
   outputs_desc_.clear();
-  auto num_binds = engine_->getNbBindings();
-  for (auto i = 0; i < num_binds; ++i) {
-    std::string name = std::string(engine_->getBindingName(i));
-    auto shape = ToVec(engine_->getBindingDimensions(i));
-    auto dtype = engine_->getBindingDataType(i);
-    if (engine_->bindingIsInput(i)) {
+  auto num_io_tensors = engine_->getNbIOTensors();
+  for (auto i = 0; i < num_io_tensors; ++i) {
+    std::string name = std::string(engine_->getIOTensorName(i));
+    auto shape = ToVec(engine_->getTensorShape(name.c_str()));
+    auto dtype = engine_->getTensorDataType(name.c_str());
+    if (engine_->getTensorIOMode(name.c_str()) ==
+        nvinfer1::TensorIOMode::kINPUT) {
       auto original_dtype = inputs_original_dtype_map.count(name)
                                 ? inputs_original_dtype_map[name]
                                 : GetFDDataType(dtype);
@@ -434,21 +437,16 @@ void TrtBackend::GetInputOutputInfo() {
       outputs_device_buffer_[name] = FDDeviceBuffer(dtype);
       casted_output_tensors_[name] = FDTensor();
     }
-    io_name_index_[name] = i;
   }
-  bindings_.resize(num_binds);
 }
 
 void TrtBackend::SetInputs(const std::vector<FDTensor>& inputs) {
   for (const auto& item : inputs) {
-    // auto idx = engine_->getBindingIndex(item.name.c_str());
-    auto iter = io_name_index_.find(item.name);
-    FDASSERT(iter != io_name_index_.end(),
+    FDASSERT(inputs_device_buffer_.count(item.name) != 0,
              "TRTBackend SetInputs not find name:%s", item.name.c_str());
-    auto idx = iter->second;
     std::vector<int> shape(item.shape.begin(), item.shape.end());
     auto dims = ToDims(shape);
-    context_->setBindingDimensions(idx, dims);
+    context_->setInputShape(item.name.c_str(), dims);
 
     if (item.device == Device::GPU) {
       if (item.dtype == FDDataType::INT64) {
@@ -499,7 +497,8 @@ void TrtBackend::SetInputs(const std::vector<FDTensor>& inputs) {
       }
     }
     // binding input buffer
-    bindings_[idx] = inputs_device_buffer_[item.name].data();
+    context_->setTensorAddress(item.name.c_str(),
+                               inputs_device_buffer_[item.name].data());
   }
 }
 
@@ -509,13 +508,8 @@ void TrtBackend::AllocateOutputsBuffer(std::vector<FDTensor>* outputs,
     outputs->resize(outputs_desc_.size());
   }
   for (size_t i = 0; i < outputs_desc_.size(); ++i) {
-    // auto idx = engine_->getBindingIndex(outputs_desc_[i].name.c_str());
-    auto idx_iter = io_name_index_.find(outputs_desc_[i].name);
-    FDASSERT(idx_iter != io_name_index_.end(),
-             "TRTBackend Outputs not find name:%s",
-             outputs_desc_[i].name.c_str());
-    auto idx = idx_iter->second;
-    auto output_dims = context_->getBindingDimensions(idx);
+    auto output_dims =
+        context_->getTensorShape(outputs_desc_[i].name.c_str());
 
     // find the original index of output
     auto iter = outputs_order_.find(outputs_desc_[i].name);
@@ -529,7 +523,8 @@ void TrtBackend::AllocateOutputsBuffer(std::vector<FDTensor>* outputs,
     outputs_device_buffer_[outputs_desc_[i].name].resize(output_dims);
 
     // binding output buffer
-    bindings_[idx] = outputs_device_buffer_[outputs_desc_[i].name].data();
+    context_->setTensorAddress(outputs_desc_[i].name.c_str(),
+                               outputs_device_buffer_[outputs_desc_[i].name].data());
 
     // set user's outputs info
     std::vector<int64_t> shape(output_dims.d,
@@ -541,7 +536,8 @@ void TrtBackend::AllocateOutputsBuffer(std::vector<FDTensor>* outputs,
     } else {
       (*outputs)[ori_idx].name = outputs_desc_[i].name;
       (*outputs)[ori_idx].SetExternalData(
-          shape, outputs_desc_[i].original_dtype, bindings_[idx], Device::GPU,
+          shape, outputs_desc_[i].original_dtype,
+          outputs_device_buffer_[outputs_desc_[i].name].data(), Device::GPU,
           option_.gpu_id);
     }
   }
@@ -575,10 +571,12 @@ bool TrtBackend::BuildTrtEngine() {
     context_.reset();
     engine_.reset();
   }
-  if (option_.max_batch_size >= 1) {
-    builder_->setMaxBatchSize(option_.max_batch_size);
-  }
-  config->setMaxWorkspaceSize(option_.max_workspace_size);
+  // Note: setMaxBatchSize() is removed in TensorRT 10.x and has no effect for
+  // networks created with kEXPLICIT_BATCH, which is the case here.
+  // Note: setMaxWorkspaceSize() is removed in TensorRT 10.x, use
+  // setMemoryPoolLimit() with MemoryPoolType::kWORKSPACE instead.
+  config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE,
+                             option_.max_workspace_size);
   auto profile = builder_->createOptimizationProfile();
   for (const auto& item : shape_range_info_) {
     FDASSERT(

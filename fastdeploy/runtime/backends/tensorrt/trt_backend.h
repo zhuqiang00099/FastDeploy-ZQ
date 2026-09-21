@@ -108,12 +108,10 @@ class TrtBackend : public BaseBackend {
   FDUniquePtr<nvinfer1::IBuilder> builder_;
   FDUniquePtr<nvinfer1::INetworkDefinition> network_;
   cudaStream_t stream_{};
-  std::vector<void*> bindings_;
   std::vector<TrtValueInfo> inputs_desc_;
   std::vector<TrtValueInfo> outputs_desc_;
   std::map<std::string, FDDeviceBuffer> inputs_device_buffer_;
   std::map<std::string, FDDeviceBuffer> outputs_device_buffer_;
-  std::map<std::string, int> io_name_index_;
 
   std::string calibration_str_;
   bool save_external_ = false;
