@@ -18,6 +18,7 @@
 #include <unordered_map>
 
 #include "NvInferRuntime.h"
+#include "NvInferPlugin.h"
 #include "fastdeploy/function/cuda_cast.h"
 #include "fastdeploy/utils/utils.h"
 #ifdef ENABLE_PADDLE2ONNX
@@ -116,6 +117,7 @@ bool TrtBackend::LoadTrtCache(const std::string& trt_engine_file) {
 }
 
 bool TrtBackend::Init(const RuntimeOption& runtime_option) {
+  initLibNvInferPlugins(static_cast<void*>(FDTrtLogger::Get()), "");
   auto trt_option = runtime_option.trt_option;
   trt_option.model_file = runtime_option.model_file;
   trt_option.params_file = runtime_option.params_file;

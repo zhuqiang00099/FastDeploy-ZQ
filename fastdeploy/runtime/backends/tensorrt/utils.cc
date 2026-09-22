@@ -64,6 +64,8 @@ size_t TrtDataTypeSize(const nvinfer1::DataType& dtype) {
     return sizeof(int8_t);
   } else if (dtype == nvinfer1::DataType::kINT32) {
     return sizeof(int32_t);
+  } else if (dtype == nvinfer1::DataType::kINT64) {
+    return sizeof(int64_t);
   }
   // kBOOL
   return sizeof(bool);
@@ -78,6 +80,8 @@ FDDataType GetFDDataType(const nvinfer1::DataType& dtype) {
     return FDDataType::INT8;
   } else if (dtype == nvinfer1::DataType::kINT32) {
     return FDDataType::INT32;
+  } else if (dtype == nvinfer1::DataType::kINT64) {
+    return FDDataType::INT64;
   }
   // kBOOL
   return FDDataType::BOOL;
