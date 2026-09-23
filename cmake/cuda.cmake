@@ -7,8 +7,12 @@ endif()
 set(CMAKE_CUDA_ARCHITECTURES OFF)
 
 if(BUILD_ON_JETSON)
-  set(fd_known_gpu_archs "53 62 72")
-  set(fd_known_gpu_archs10 "53 62 72")
+  # Jetson series GPU architectures:
+  #   53: Nano (Maxwell), 62: TX2 (Pascal), 72: Xavier (Volta)
+  #   87: Orin Nano/NX/AGX Orin (Ampere) - requires CUDA 11.1+
+  #       JetPack 6.x (CUDA 12.6) on Orin-Nano uses sm_87.
+  set(fd_known_gpu_archs "53 62 72 87")
+  set(fd_known_gpu_archs10 "53 62 72")  # CUDA 10.x has no sm_87 support
 else()
   message("Using New Release Strategy - All Arches Packge")
   set(fd_known_gpu_archs "35 50 52 60 61 70 75 80 86")
@@ -156,10 +160,15 @@ function(select_nvcc_arch_flags out_variable)
   elseif(${CUDA_ARCH_NAME} STREQUAL "Turing")
     set(cuda_arch_bin "75")
   elseif(${CUDA_ARCH_NAME} STREQUAL "Ampere")
-    if(${CMAKE_CUDA_COMPILER_VERSION} LESS 11.1) # CUDA 11.0
-      set(cuda_arch_bin "80")
-    elseif(${CMAKE_CUDA_COMPILER_VERSION} LESS 12.0) # CUDA 11.1+
-      set(cuda_arch_bin "80 86")
+    if(BUILD_ON_JETSON)
+      # Jetson Orin series (Nano/NX/AGX Orin) is sm_87
+      set(cuda_arch_bin "87")
+    else()
+      if(${CMAKE_CUDA_COMPILER_VERSION} LESS 11.1) # CUDA 11.0
+        set(cuda_arch_bin "80")
+      elseif(${CMAKE_CUDA_COMPILER_VERSION} LESS 12.0) # CUDA 11.1+
+        set(cuda_arch_bin "80 86")
+      endif()
     endif()
   elseif(${CUDA_ARCH_NAME} STREQUAL "Hopper")
     set(cuda_arch_bin "90")
@@ -236,26 +245,43 @@ function(select_nvcc_arch_flags out_variable)
 endfunction()
 
 message(STATUS "CUDA detected: " ${CMAKE_CUDA_COMPILER_VERSION})
-if(${CMAKE_CUDA_COMPILER_VERSION} LESS 11.0) # CUDA 10.x
-  set(fd_known_gpu_archs ${fd_known_gpu_archs10})
+if(BUILD_ON_JETSON)
+  # Jetson: keep Jetson-specific arch list, only adjust sm_87 (Orin) availability
+  # based on CUDA version. Desktop GPU arches (50/60/61/70/75/80/86/89/...)
+  # are NOT included to keep binaries small and Jetson-only.
+  if(${CMAKE_CUDA_COMPILER_VERSION} LESS 11.1)
+    # CUDA 10.x / 11.0 has no sm_87 support
+    set(fd_known_gpu_archs "53 62 72")
+  else()
+    # CUDA 11.1+ supports sm_87 (Orin Nano/NX/AGX Orin)
+    # JetPack 6.x (CUDA 12.6) hits this branch.
+    set(fd_known_gpu_archs "53 62 72 87")
+  endif()
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D_MWAITXINTRIN_H_INCLUDED")
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D__STRICT_ANSI__")
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wno-deprecated-gpu-targets")
-elseif(${CMAKE_CUDA_COMPILER_VERSION} LESS 11.2) # CUDA 11.0/11.1
-  set(fd_known_gpu_archs ${fd_known_gpu_archs11})
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D_MWAITXINTRIN_H_INCLUDED")
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D__STRICT_ANSI__")
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wno-deprecated-gpu-targets")
-elseif(${CMAKE_CUDA_COMPILER_VERSION} LESS 12.8) # CUDA 11.2+
-  set(fd_known_gpu_archs "${fd_known_gpu_archs12}")
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D_MWAITXINTRIN_H_INCLUDED")
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D__STRICT_ANSI__")
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wno-deprecated-gpu-targets")
-else() # CUDA 12.8+, add Blackwell (sm_100, sm_120)
-  set(fd_known_gpu_archs "${fd_known_gpu_archs12_8}")
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D_MWAITXINTRIN_H_INCLUDED")
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D__STRICT_ANSI__")
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wno-deprecated-gpu-targets")
+else()
+  if(${CMAKE_CUDA_COMPILER_VERSION} LESS 11.0) # CUDA 10.x
+    set(fd_known_gpu_archs ${fd_known_gpu_archs10})
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D_MWAITXINTRIN_H_INCLUDED")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D__STRICT_ANSI__")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wno-deprecated-gpu-targets")
+  elseif(${CMAKE_CUDA_COMPILER_VERSION} LESS 11.2) # CUDA 11.0/11.1
+    set(fd_known_gpu_archs ${fd_known_gpu_archs11})
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D_MWAITXINTRIN_H_INCLUDED")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D__STRICT_ANSI__")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wno-deprecated-gpu-targets")
+  elseif(${CMAKE_CUDA_COMPILER_VERSION} LESS 12.8) # CUDA 11.2+
+    set(fd_known_gpu_archs "${fd_known_gpu_archs12}")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D_MWAITXINTRIN_H_INCLUDED")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D__STRICT_ANSI__")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wno-deprecated-gpu-targets")
+  else() # CUDA 12.8+, add Blackwell (sm_100, sm_120)
+    set(fd_known_gpu_archs "${fd_known_gpu_archs12_8}")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D_MWAITXINTRIN_H_INCLUDED")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D__STRICT_ANSI__")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wno-deprecated-gpu-targets")
+  endif()
 endif()
 
 # setting nvcc arch flags
