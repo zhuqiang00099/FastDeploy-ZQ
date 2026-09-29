@@ -1,10 +1,9 @@
 ## 前言
 <p>目前fastdpv1.0已经不维护，v2.0只支持python，此fork项目继续更新v1.0，主要是个人使用</p>
 
-## 近期计划（2026-7.1-2026.8.30）
-- picodet旧版支持，此版本在cpu上速度可观。
-- yolov8优化分辨率支持，yolov8-seg支持
-- openvino backend比较老旧了，打算更新到2024版，支持在intel-gpu上进行图像预处理
+## 2026.9.29
+- 升级cuda和tensorrt版本，目前自测支持cuda12.8和tensorrt10.9,已支持50系显卡。编译时需要指定tensorrt路径。
+- 增加ppocrv5、v6的支持。注意：v5、v6的字典在yml文件中，需要手动提取成txt，官方目前使用的PIR模型需要转换成onnx格式，paddle2onnx如果要支持PIR，需要paddle库才可以做到，暂时不考虑使用内置paddle2onnx转换PIR。
 
 [English](README_EN.md) | 简体中文 | [हिन्दी](./docs/docs_i18n/README_हिन्दी.md) | [日本語](./docs/docs_i18n/README_日本語.md) | [한국인](./docs/docs_i18n/README_한국인.md) | [Pу́сский язы́к](./docs/docs_i18n/README_Pу́сский_язы́к.md)
 
