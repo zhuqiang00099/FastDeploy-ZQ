@@ -153,15 +153,11 @@ bool OpenVINOBackend::InitFromPaddle(const std::string& model_file,
   }
   option_ = option;
   std::shared_ptr<ov::Model> model;
-  FDINFO<<"core.read_model start"<<std::endl;
-  FDINFO<<"model_file size: "<<model_file.size()<<std::endl;
-  FDINFO<<"params_file size: "<<params_file.size()<<std::endl;
   
-
    model = core_.read_model(
         model_file, ov::Tensor(ov::element::u8, ov::Shape{params_file.size()},
                                const_cast<char*>(params_file.data())));
-  FDINFO<<"core.read_model end"<<std::endl;
+
 
   // Check whether the model is loaded successfully
   if (model == nullptr) {
@@ -171,12 +167,6 @@ bool OpenVINOBackend::InitFromPaddle(const std::string& model_file,
             << params_file.size() << "." << std::endl;
     return false;
   }
-  FDINFO << "Paddle model loaded from memory, name: "
-         << model->get_friendly_name()
-         << ", inputs: " << model->inputs().size()
-         << ", outputs: " << model->outputs().size()
-         << ", model buffer size: " << model_file.size()
-         << ", params buffer size: " << params_file.size() << "." << std::endl;
 
   if (option_.shape_infos.size() > 0) {
     std::map<std::string, ov::PartialShape> shape_infos;
@@ -250,12 +240,8 @@ bool OpenVINOBackend::InitFromPaddle(const std::string& model_file,
   };
 
 
-  FDINFO << "Compile OpenVINO model on device_name:" << option.device << "."
-         << std::endl;
-
   compiled_model_ = core_.compile_model(model, option.device, config);
 
-  FDINFO << "OpenVINO model compiled successfully." << std::endl;
 
   request_ = compiled_model_.create_infer_request();
   initialized_ = true;
@@ -303,11 +289,7 @@ bool OpenVINOBackend::InitFromOnnx(const std::string& model_file,
             << model_file.size() << "." << std::endl;
     return false;
   }
-  FDINFO << "ONNX model loaded from memory, name: "
-         << model->get_friendly_name()
-         << ", inputs: " << model->inputs().size()
-         << ", outputs: " << model->outputs().size()
-         << ", model buffer size: " << model_file.size() << "." << std::endl;
+
 
   if (option_.shape_infos.size() > 0) {
     std::map<std::string, ov::PartialShape> shape_infos;
@@ -380,8 +362,6 @@ bool OpenVINOBackend::InitFromOnnx(const std::string& model_file,
       ov::hint::inference_precision(ov::element::f16),
   };
 
-  FDINFO << "Compile OpenVINO model on device_name:" << option.device << "."
-         << std::endl;
   compiled_model_ = core_.compile_model(model, option.device, config);
 
   request_ = compiled_model_.create_infer_request();
