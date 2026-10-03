@@ -17,6 +17,8 @@
 #include "paddle2onnx/converter.h"
 #endif
 
+#include <fstream>
+
 namespace fastdeploy {
 
 std::vector<int64_t> PartialShapeToVec(const ov::PartialShape& shape) {
@@ -98,28 +100,45 @@ void OpenVINOBackend::InitTensorInfo(
 }
 
 bool OpenVINOBackend::Init(const RuntimeOption& option) {
-  if (option.model_from_memory_) {
-    FDERROR << "OpenVINOBackend doesn't support load model from memory, please "
-               "load model from disk."
-            << std::endl;
-    return false;
-  }
   if (option.device != Device::CPU) {
     FDERROR << "OpenVINOBackend only supports Device::CPU, but now its "
             << option.device << "." << std::endl;
     return false;
   }
-
-  if (option.model_format == ModelFormat::PADDLE) {
-    return InitFromPaddle(option.model_file, option.params_file,
-                          option.openvino_option);
-  } else if (option.model_format == ModelFormat::ONNX) {
-    return InitFromOnnx(option.model_file, option.openvino_option);
+ auto openvino_option = option.openvino_option;
+ if (option.model_format == ModelFormat::PADDLE) {
+    FDINFO << "Loading Paddle model." << std::endl;
+    if (option.model_from_memory_) {
+      FDINFO << "Loading Paddle model from memory." << std::endl;
+      return InitFromPaddle(option.model_file,
+                            option.params_file,
+                            openvino_option);
+    } else {
+      FDINFO << "Loading Paddle model from file." << std::endl;
+      std::string model_buffer;
+      std::string params_buffer;
+      FDASSERT(ReadBinaryFromFile(option.model_file, &model_buffer),
+               "Failed to read model file %s.",
+               option.model_file.c_str());
+      FDASSERT(ReadBinaryFromFile(option.params_file, &params_buffer),
+               "Failed to read parameters file %s.",
+               option.params_file.c_str());
+      return InitFromPaddle(model_buffer, params_buffer,
+                            openvino_option);
+    }
   } else {
-    FDERROR << "OpenVINOBackend only supports model format Paddle/ONNX, but "
-               "now its "
-            << option.model_format << std::endl;
-    return false;
+    FDINFO << "Loading ONNX model." << std::endl;
+    if (option.model_from_memory_) {
+      FDINFO << "Loading ONNX model from memory." << std::endl;
+      return InitFromOnnx(option.model_file, openvino_option);
+    } else {
+      FDINFO << "Loading ONNX model from file." << std::endl;
+      std::string model_buffer;
+      FDASSERT(ReadBinaryFromFile(option.model_file, &model_buffer),
+               "Failed to read model file %s.",
+               option.model_file.c_str());
+      return InitFromOnnx(model_buffer, openvino_option);
+    }
   }
   return false;
 }
@@ -133,8 +152,32 @@ bool OpenVINOBackend::InitFromPaddle(const std::string& model_file,
     return false;
   }
   option_ = option;
+  std::shared_ptr<ov::Model> model;
+  FDINFO<<"core.read_model start"<<std::endl;
+  FDINFO<<"model_file size: "<<model_file.size()<<std::endl;
+  FDINFO<<"params_file size: "<<params_file.size()<<std::endl;
+  
 
-  std::shared_ptr<ov::Model> model = core_.read_model(model_file, params_file);
+   model = core_.read_model(
+        model_file, ov::Tensor(ov::element::u8, ov::Shape{params_file.size()},
+                               const_cast<char*>(params_file.data())));
+  FDINFO<<"core.read_model end"<<std::endl;
+
+  // Check whether the model is loaded successfully
+  if (model == nullptr) {
+    FDERROR << "Failed to read Paddle model from memory, the loaded model "
+               "is nullptr. model buffer size: "
+            << model_file.size() << ", params buffer size: "
+            << params_file.size() << "." << std::endl;
+    return false;
+  }
+  FDINFO << "Paddle model loaded from memory, name: "
+         << model->get_friendly_name()
+         << ", inputs: " << model->inputs().size()
+         << ", outputs: " << model->outputs().size()
+         << ", model buffer size: " << model_file.size()
+         << ", params buffer size: " << params_file.size() << "." << std::endl;
+
   if (option_.shape_infos.size() > 0) {
     std::map<std::string, ov::PartialShape> shape_infos;
     for (const auto& item : option_.shape_infos) {
@@ -167,10 +210,8 @@ bool OpenVINOBackend::InitFromPaddle(const std::string& model_file,
 
   // OpenVINO model may not keep the same order with original model
   // So here will reorder it's inputs and outputs
-  std::string model_content;
-  ReadBinaryFromFile(model_file, &model_content);
   auto reader =
-      paddle2onnx::PaddleReader(model_content.c_str(), model_content.size());
+      paddle2onnx::PaddleReader(model_file.c_str(), model_file.size());
   if (reader.num_inputs != input_infos.size()) {
     FDERROR << "The number of inputs from PaddleReader:" << reader.num_inputs
             << " not equal to the number of inputs from OpenVINO:"
@@ -202,45 +243,19 @@ bool OpenVINOBackend::InitFromPaddle(const std::string& model_file,
     output_infos_.push_back(iter->second);
   }
 
-  ov::AnyMap properties;
-  if (option_.hint == "UNDEFINED") {
-    if (option_.device == "CPU" && option_.cpu_thread_num > 0) {
-      properties["INFERENCE_NUM_THREADS"] = option_.cpu_thread_num;
-    }
-    if (option_.num_streams == -1) {
-      properties["NUM_STREAMS"] = ov::streams::AUTO;
-    } else if (option_.num_streams == -2) {
-      properties["NUM_STREAMS"] = ov::streams::NUMA;
-    } else if (option_.num_streams > 0) {
-      properties["NUM_STREAMS"] = option_.num_streams;
-    }
+  ov::AnyMap config = {
+      ov::hint::performance_mode(
+          ov::hint::PerformanceMode::CUMULATIVE_THROUGHPUT),
+      ov::hint::inference_precision(ov::element::f16),
+  };
 
-    FDINFO << "number of streams:" << option_.num_streams << "." << std::endl;
-    if (option_.affinity == "YES") {
-      properties["AFFINITY"] = "CORE";
-    } else if (option_.affinity == "NO") {
-      properties["AFFINITY"] = "NONE";
-    } else if (option_.affinity == "NUMA") {
-      properties["AFFINITY"] = "NUMA";
-    } else if (option_.affinity == "HYBRID_AWARE") {
-      properties["AFFINITY"] = "HYBRID_AWARE";
-    }
-    FDINFO << "affinity:" << option_.affinity << "." << std::endl;
-  } else if (option_.hint == "LATENCY") {
-    properties.emplace(
-        ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY));
-  } else if (option_.hint == "THROUGHPUT") {
-    properties.emplace(
-        ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT));
-  } else if (option_.hint == "CUMULATIVE_THROUGHPUT") {
-    properties.emplace(ov::hint::performance_mode(
-        ov::hint::PerformanceMode::CUMULATIVE_THROUGHPUT));
-  }
 
   FDINFO << "Compile OpenVINO model on device_name:" << option.device << "."
          << std::endl;
 
-  compiled_model_ = core_.compile_model(model, option.device, properties);
+  compiled_model_ = core_.compile_model(model, option.device, config);
+
+  FDINFO << "OpenVINO model compiled successfully." << std::endl;
 
   request_ = compiled_model_.create_infer_request();
   initialized_ = true;
@@ -278,7 +293,22 @@ bool OpenVINOBackend::InitFromOnnx(const std::string& model_file,
   }
   option_ = option;
 
-  std::shared_ptr<ov::Model> model = core_.read_model(model_file);
+  std::shared_ptr<ov::Model> model;
+  model = core_.read_model(model_file, ov::Tensor());
+
+  // Check whether the model is loaded successfully
+  if (model == nullptr) {
+    FDERROR << "Failed to read ONNX model from memory, the loaded model is "
+               "nullptr. model buffer size: "
+            << model_file.size() << "." << std::endl;
+    return false;
+  }
+  FDINFO << "ONNX model loaded from memory, name: "
+         << model->get_friendly_name()
+         << ", inputs: " << model->inputs().size()
+         << ", outputs: " << model->outputs().size()
+         << ", model buffer size: " << model_file.size() << "." << std::endl;
+
   if (option_.shape_infos.size() > 0) {
     std::map<std::string, ov::PartialShape> shape_infos;
     for (const auto& item : option_.shape_infos) {
@@ -311,10 +341,8 @@ bool OpenVINOBackend::InitFromOnnx(const std::string& model_file,
 
   // OpenVINO model may not keep the same order with original model
   // So here will reorder it's inputs and outputs
-  std::string model_content;
-  ReadBinaryFromFile(model_file, &model_content);
   auto reader =
-      paddle2onnx::OnnxReader(model_content.c_str(), model_content.size());
+      paddle2onnx::OnnxReader(model_file.c_str(), model_file.size());
   if (reader.num_inputs != input_infos.size()) {
     FDERROR << "The number of inputs from OnnxReader:" << reader.num_inputs
             << " not equal to the number of inputs from OpenVINO:"
@@ -346,44 +374,15 @@ bool OpenVINOBackend::InitFromOnnx(const std::string& model_file,
     output_infos_.push_back(iter->second);
   }
 
-  ov::AnyMap properties;
-  if (option_.hint == "UNDEFINED") {
-    if (option_.device == "CPU" && option_.cpu_thread_num > 0) {
-      properties["INFERENCE_NUM_THREADS"] = option_.cpu_thread_num;
-    }
-    if (option_.num_streams == -1) {
-      properties["NUM_STREAMS"] = ov::streams::AUTO;
-    } else if (option_.num_streams == -2) {
-      properties["NUM_STREAMS"] = ov::streams::NUMA;
-    } else if (option_.num_streams > 0) {
-      properties["NUM_STREAMS"] = option_.num_streams;
-    }
-
-    FDINFO << "number of streams:" << option_.num_streams << "." << std::endl;
-    if (option_.affinity == "YES") {
-      properties["AFFINITY"] = "CORE";
-    } else if (option_.affinity == "NO") {
-      properties["AFFINITY"] = "NONE";
-    } else if (option_.affinity == "NUMA") {
-      properties["AFFINITY"] = "NUMA";
-    } else if (option_.affinity == "HYBRID_AWARE") {
-      properties["AFFINITY"] = "HYBRID_AWARE";
-    }
-    FDINFO << "affinity:" << option_.affinity << "." << std::endl;
-  } else if (option_.hint == "LATENCY") {
-    properties.emplace(
-        ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY));
-  } else if (option_.hint == "THROUGHPUT") {
-    properties.emplace(
-        ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT));
-  } else if (option_.hint == "CUMULATIVE_THROUGHPUT") {
-    properties.emplace(ov::hint::performance_mode(
-        ov::hint::PerformanceMode::CUMULATIVE_THROUGHPUT));
-  }
+   ov::AnyMap config = {
+      ov::hint::performance_mode(
+          ov::hint::PerformanceMode::CUMULATIVE_THROUGHPUT),
+      ov::hint::inference_precision(ov::element::f16),
+  };
 
   FDINFO << "Compile OpenVINO model on device_name:" << option.device << "."
          << std::endl;
-  compiled_model_ = core_.compile_model(model, option.device, properties);
+  compiled_model_ = core_.compile_model(model, option.device, config);
 
   request_ = compiled_model_.create_infer_request();
 

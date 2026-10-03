@@ -15,16 +15,65 @@ function(redefine_file_macro targetname)
 endfunction()
 
 function(download_and_decompress url filename decompress_dir)
-  if(NOT EXISTS ${filename})
-    message("Downloading file from ${url} to ${filename} ...")
-    file(DOWNLOAD ${url} "${filename}.tmp" SHOW_PROGRESS)
-    file(RENAME "${filename}.tmp" ${filename})
+  # 1. 下载文件（带重试和错误检查）
+  if(NOT EXISTS "${filename}")
+    message(STATUS "Downloading file from ${url} to ${filename} ...")
+    set(retry_count 3)
+    set(download_success FALSE)
+    
+    foreach(i RANGE 1 ${retry_count})
+      file(DOWNLOAD "${url}" "${filename}.tmp"
+           SHOW_PROGRESS
+           STATUS download_status
+           TIMEOUT 60  # 超时时间60秒
+      )
+      list(GET download_status 0 status_code)
+      if(status_code EQUAL 0)
+        set(download_success TRUE)
+        break()
+      else()
+        message(WARNING "Download attempt ${i} failed: ${download_status}")
+        file(REMOVE "${filename}.tmp")
+      endif()
+    endforeach()
+    
+    if(NOT download_success)
+      message(FATAL_ERROR "Failed to download ${url} after ${retry_count} attempts")
+    endif()
+    
+    file(RENAME "${filename}.tmp" "${filename}")
   endif()
-  if(NOT EXISTS ${decompress_dir})
-    file(MAKE_DIRECTORY ${decompress_dir})
+  
+  # 2. 创建解压目录
+  if(NOT EXISTS "${decompress_dir}")
+    file(MAKE_DIRECTORY "${decompress_dir}")
   endif()
-  message("Decompress file ${filename} ...")
-  execute_process(COMMAND ${CMAKE_COMMAND} -E tar -xf ${filename} WORKING_DIRECTORY ${decompress_dir})
+  
+  # 3. 解压文件（优化 Windows 兼容性）
+  message(STATUS "Decompressing file ${filename} ...")
+  
+  # 方法一：尝试使用 cmake -E tar --touch（CMake 3.24+ 支持 --touch，可避免时间戳问题）
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E tar -xf "${filename}" --touch
+    WORKING_DIRECTORY "${decompress_dir}"
+    RESULT_VARIABLE tar_result
+  )
+  
+  # 如果 --touch 不支持或失败，回退到普通解压
+  if(NOT tar_result EQUAL 0)
+    message(STATUS "Retrying without --touch flag ...")
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -E tar -xf "${filename}"
+      WORKING_DIRECTORY "${decompress_dir}"
+      RESULT_VARIABLE tar_result
+    )
+  endif()
+  
+  if(NOT tar_result EQUAL 0)
+    message(FATAL_ERROR "Failed to extract ${filename}. Please extract it manually to ${decompress_dir}")
+  endif()
+  
+  message(STATUS "Decompress completed: ${decompress_dir}")
 endfunction()
 
 function(get_openvino_libs OPENVINO_RUNTIME_DIR)
