@@ -107,14 +107,11 @@ bool OpenVINOBackend::Init(const RuntimeOption& option) {
   }
  auto openvino_option = option.openvino_option;
  if (option.model_format == ModelFormat::PADDLE) {
-    FDINFO << "Loading Paddle model." << std::endl;
     if (option.model_from_memory_) {
-      FDINFO << "Loading Paddle model from memory." << std::endl;
       return InitFromPaddle(option.model_file,
                             option.params_file,
                             openvino_option);
     } else {
-      FDINFO << "Loading Paddle model from file." << std::endl;
       std::string model_buffer;
       std::string params_buffer;
       FDASSERT(ReadBinaryFromFile(option.model_file, &model_buffer),
@@ -127,12 +124,9 @@ bool OpenVINOBackend::Init(const RuntimeOption& option) {
                             openvino_option);
     }
   } else {
-    FDINFO << "Loading ONNX model." << std::endl;
     if (option.model_from_memory_) {
-      FDINFO << "Loading ONNX model from memory." << std::endl;
       return InitFromOnnx(option.model_file, openvino_option);
     } else {
-      FDINFO << "Loading ONNX model from file." << std::endl;
       std::string model_buffer;
       FDASSERT(ReadBinaryFromFile(option.model_file, &model_buffer),
                "Failed to read model file %s.",
