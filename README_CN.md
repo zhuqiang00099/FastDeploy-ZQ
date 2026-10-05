@@ -1,6 +1,9 @@
 ## 前言
 <p>目前fastdpv1.0已经不维护，v2.0只支持python，此fork项目继续更新v1.0，主要是个人使用</p>
 
+## 2026.10.5
+- 升级openvino版本，支持内存加载模型，目前测试支持2025.4版本，编译时需要指定openvino路径。
+
 ## 2026.9.29
 - 升级cuda和tensorrt版本，目前自测支持cuda12.8和tensorrt10.9,已支持50系显卡。编译时需要指定tensorrt路径。
 - 增加ppocrv5、v6的支持。注意：v5、v6的字典在yml文件中，需要手动提取成txt，官方目前使用的PIR模型需要转换成onnx格式，paddle2onnx如果要支持PIR，需要paddle库才可以做到，暂时不考虑使用内置paddle2onnx转换PIR。
